@@ -1,0 +1,224 @@
+---
+title: "Final Project"
+author: "Megan Mall"
+date: "3/10/2021"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: 4
+  pdf_document:
+    toc: yes
+    toc_depth: 4
+subtitle: The Effect of Gender and Genre on a Young Adult Book’s Average Rating
+---
+
+ 
+
+```{r knitr-options, include = FALSE}
+knitr::opts_chunk$set(fig.align="center",
+                      fig.height=6,
+                      fig.width=12,
+                      warning = FALSE,
+                      message = FALSE,
+                      comment = NA,
+                      echo=FALSE)
+library(ggplot2)
+library(ggpubr)
+library(tidyverse)
+library(AICcmodavg)
+library(knitr)
+library(glue)
+library(rstatix)
+library(dplyr) 
+
+```
+
+# Summary
+
+Is there some sort of effect of gender and/or genre on the average book rating a young adult book recieves on Good Reads?  This project uses a data set from https://www.kaggle.com/brosen255/goodreads-books to answer that question by measuring the means of the average book ratings in each applicable category (ANOVA).
+
+# Introduction
+
+Does the gender of an author or the genre of the book have an effect on the average rating a young adult book receives on Good Reads?  Do the combination of gender and genre have an effect on that rating?
+
+The null hypothesis states that there is no difference in the average book ratings across genres or genders.  The alternative hypothesis states that there is a difference in the average book rating across genres and genders.
+
+The traditionally accepted main genres of fiction are crime/mystery, fantasy, romance, science fiction, inspirational/contemporary, westerns, historical, and horror.  Based on the genre labels applied by Good Reads and the collection of young adult titles in this data set, I will be looking at mystery, fantasy, romance, science fiction, contemporary, historical, and horror.  There were no titles that were classified as westerns in the young adult data set.
+
+
+```{r}
+#Data prep and initial mean computations
+#prepare the data
+dat = read.csv("good_reads_final.csv",stringsAsFactors = FALSE,
+                sep=",",header = TRUE)
+
+#filter for young adult as the primary genre 
+dat = filter(dat,  dat$genre_1 == "Young Adult")
+
+#filter out the standard genres of fiction 
+fiction.genres = c("Mystery", "Fantasy", "Science Fiction", "Contemporary", "Romance", "Historical", "Horror")
+dat = filter(dat, dat$genre_2 %in% fiction.genres)
+
+#clean out some text-heavy, unnecessary columns for the sake of clarity
+dat = dat[-c(1,3:9,11,13,16:20)]
+```
+
+## Summary Statistics
+
+The means of the average book rating for each gender, genre, and combination of were caclculated.  These means were near equal for male and female authors, and the genre means were all within about 0.05 of each other.  There was a greater difference in many of the genre by gender means - the greatest of which was horror - female horror authors had a mean average book rating approximatly 0.14 less than male horror authors. 
+
+```{r}
+#separate out male and female authors for ease of analysis
+f = filter(dat, dat$author_gender == "female")
+m = filter(dat, dat$author_gender == "male")
+
+f.mean = mean(f$book_average_rating)
+m.mean = mean(m$book_average_rating)
+cat("Average book rating for female authors: ", f.mean)
+cat("Average book rating for male authors: ", m.mean)
+genre.mean = rep(NA, length(fiction.genres))
+genre.mean.f = rep(NA, length(fiction.genres))
+genre.mean.m = rep(NA, length(fiction.genres))
+
+#calculates the mean for each genre
+for (i in 1:length(fiction.genres)){
+  dat.temp = filter(dat, genre_2 == fiction.genres[i]) 
+  genre.mean[i] = mean(dat.temp$book_average_rating)
+}
+#calculates the mean for each genre by gender
+for (i in 1:length(fiction.genres)){
+  dat.temp.f = filter(f, genre_2 == fiction.genres[i]) 
+  genre.mean.f[i] = mean(dat.temp.f$book_average_rating)
+   dat.temp.m = filter(m, genre_2 == fiction.genres[i]) 
+  genre.mean.m[i] = mean(dat.temp.m$book_average_rating)
+  title.f = glue(fiction.genres[i], " female")
+  title.m = glue(fiction.genres[i], " male")
+}
+#creates a dataframe of the means
+dat.mean = data.frame(genre = fiction.genres, mean.female = genre.mean.f, mean.male = genre.mean.m, total.mean = genre.mean)
+dat.mean
+
+```
+
+Initial analysis of the full data set show that the average book ratings are roughly normally distributed, as shown in the "Average Book Rating for All Titles" histogram.  Additionally, a ggqqplot broken down by gender and genre show each group is also roughly distributed, with a few outliers noticed.  Since rating is a fairly objective data point, the analysis will be completed on the full data set as well as the data set without these outliers.
+
+
+When the outliers are excluded, the data set is still roughly normally distributed as seen in the "Average Book Ratings - Outliers Excluded" histogram.
+
+```{r}
+#identify the outliers
+outliers = dat %>% group_by(author_gender, genre_1) %>% identify_outliers(book_average_rating)
+outliers.ids = outliers$book_id
+
+#filter out the outliers for comparison tests
+dat.alt = filter(dat, !(book_id %in% outliers.ids))
+
+```
+
+A one way ANOVA test of the means of the average book ratings by gender and of average book ratings by genre was performed.  A two way ANOVA test of the mean average book ratings of gender and genre as an additive effect and of gender and genre as an interaction effect was also performed.  The best fit of the two way models will be determined by the AIC test.  
+
+
+```{r}
+#With outliers
+#one way in regards to gender and genre
+gender.analysis = aov(book_average_rating~author_gender, data = dat)
+summary(gender.analysis)
+
+genre.analysis = aov(book_average_rating~genre_2, data = dat)
+summary(genre.analysis)
+
+#two way test with additive effect
+two.way.add = aov(book_average_rating~author_gender+genre_2, data = dat)
+summary(two.way.add)
+#two way test with interaction effect
+two.way.int = aov(book_average_rating~author_gender*genre_2, data = dat)
+summary(two.way.int)
+
+#identify the best model
+model.set = list(two.way.add, two.way.int)
+model.names = c("two.way.add", "two.way.int")
+aictab(model.set, modnames = model.names)
+
+
+
+```
+
+
+These tests were repeated with the data set that excludes the outliers.
+
+```{r}
+#Without outliers
+#one way in regards to gender and genre
+gender.analysis.alt = aov(book_average_rating~author_gender, data = dat.alt)
+summary(gender.analysis.alt)
+
+genre.analysis.alt = aov(book_average_rating~genre_2, data = dat.alt)
+summary(genre.analysis.alt)
+
+#two way test with additive effect
+two.way.add.alt = aov(book_average_rating~author_gender+genre_2, data = dat.alt)
+summary(two.way.add.alt)
+#two way test with interaction effect
+two.way.int.alt = aov(book_average_rating~author_gender*genre_2, data = dat.alt)
+summary(two.way.int.alt)
+
+#identify the best model
+model.set.alt = list(two.way.add.alt, two.way.int.alt)
+model.names.alt = c("two.way.add", "two.way.int")
+aictab(model.set.alt, modnames = model.names.alt)
+
+```
+
+# Analysis
+## Full Data Set
+The p-values for the one way tests of both gender and genre were greater than 0.05, which means there is no statistical significance on the book ratings by either of these variables.  Both of the two way tests (additive and interaction) show the same thing - the p-values are greater than 0.05 so no statistical significance is found.
+
+The Akaike Information Criterion (AIC) test has a lower value for the additive two way (9) and a higher value for the interaction tow way (15).  Therefore, the additive model is the better fit of the two way models.  
+
+The plots of the additive two way model (below) show an acceptable spread of the residuals against the fitted model as well as a general trend of normality on the Q-Q plot.  The line on the scale leverage plot is nicely straight, and while there is a bit of clustering on the left side of the residuals v leverage graph, it is not in a troublesome location and no values are outside of Cook's distance.  These are all good indications of a normal distribution of the residuals.
+
+## With Outliers Excluded
+Running the test without the outliers also finds no statistically significant differences in the average book ratings by gender and/or genre.  The resulting plots (below) do show a slightly better case for normality (the Normal Q-Q plot is a bit more along the line), but it is to be expected the removal of the outliers would show that pattern.  Even so, the p-values remain insignificant.
+
+# Conclusion
+In conclusion, based on the results above, genre and gender seem to have no effect on the rating of a book - neither by main effect nor an interaction/additive effect.  The results were not significant whether the outliers were present or not, so I can conclude that they did not affect the outcome of the original data.  Based on these tests alone, there is not sufficient evidence to reject the null hypothesis.
+
+# Plots
+## Histogram of all average book ratings
+
+```{r}
+#histogram with the normal distribution over it
+ggplot(dat, aes(x = book_average_rating)) + geom_histogram(aes(y = ..density..), bins = 20) + stat_function(fun = dnorm, args = list(mean = mean(dat$book_average_rating), sd = sqrt(var(dat$book_average_rating)))) + labs (title = "Average Book Ratings for All Titles") 
+
+```
+
+## ggqqplots of each genre by gender
+```{r}
+# check the normality by each individual data set
+ggqqplot(dat, "book_average_rating") + facet_grid(author_gender ~ genre_2)
+```
+
+## Histogram of average book ratings with the outliers excluded
+```{r}
+ggplot(dat.alt, aes(x = book_average_rating)) + geom_histogram(aes(y = ..density..), bins = 20) + stat_function(fun = dnorm, args = list(mean = mean(dat.alt$book_average_rating), sd = sqrt(var(dat.alt$book_average_rating)))) + labs (title = "Average Book Ratings - Outliers Excluded")
+```
+
+## Plots of the additive two way model for the original data set
+```{r}
+plot(two.way.add)
+```
+
+## Plots of the additive two way model with the outliers excluded
+```{r}
+plot(two.way.add.alt)
+```
+
+
+# APPENDIX: The Code
+```{r appendix, echo=TRUE, eval=FALSE, ref.label=all_labels()}
+
+```
